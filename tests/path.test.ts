@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { openProjectFile, resolveProjectPath } from '../src/utils/path.js';
+import {
+  openProjectDirectory,
+  openProjectFile,
+  resolveProjectPath,
+} from '../src/utils/path.js';
 
 const createdDirectories: string[] = [];
 
@@ -74,6 +78,27 @@ describe('openProjectFile', () => {
       );
     } finally {
       await opened.handle.close();
+    }
+  });
+});
+
+describe('openProjectDirectory', () => {
+  it('keeps enumerating the validated directory after its path is replaced', async () => {
+    const root = await createProject();
+    const outside = await mkdtemp(join(tmpdir(), 'local-code-agent-outside-'));
+    createdDirectories.push(outside);
+    await writeFile(join(outside, 'outside-secret.txt'), 'secret');
+    const opened = await openProjectDirectory(root, 'src');
+
+    try {
+      await rename(join(root, 'src'), join(root, 'original-src'));
+      await symlink(outside, join(root, 'src'), 'junction');
+      const names: string[] = [];
+      for await (const entry of opened.directory) names.push(entry.name);
+
+      expect(names).toEqual(['example.ts']);
+    } finally {
+      await opened.directory.close().catch(() => undefined);
     }
   });
 });

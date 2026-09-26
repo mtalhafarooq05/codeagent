@@ -22,7 +22,9 @@ async function main(): Promise<void> {
   const provider = new OllamaProvider(config.model, config.ollamaHost);
   stdout.write(`Checking Ollama at ${config.ollamaHost}...\n`);
   await provider.checkAvailability();
-  stdout.write(`Ready with ${config.model}. Enabled tool: read_file.\n\n`);
+  stdout.write(
+    `Ready with ${config.model}. Enabled tools: read_file, list_directory.\n\n`,
+  );
   stdout.write(`${formatProfile(profile)}\n\n`);
 
   const tools = createProjectToolRegistry(config.projectRoot);

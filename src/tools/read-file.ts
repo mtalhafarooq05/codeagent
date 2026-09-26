@@ -76,49 +76,6 @@ function isSensitivePath(path: string): boolean {
   );
 }
 
-function parseArguments(value: unknown): ReadFileArguments | ToolExecutionResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return invalid('Arguments must be an object.');
-  }
-
-  const arguments_ = value as Record<string, unknown>;
-  const allowed = new Set(['path', 'startLine', 'endLine']);
-  const unknown = Object.keys(arguments_).find((key) => !allowed.has(key));
-  if (unknown) return invalid(`Unknown argument: ${unknown}.`);
-
-  if (typeof arguments_.path !== 'string' || !arguments_.path.trim()) {
-    return invalid('path must be a non-empty string.');
-  }
-
-  if (
-    arguments_.startLine !== undefined &&
-    (!Number.isInteger(arguments_.startLine) || (arguments_.startLine as number) < 1)
-  ) {
-    return invalid('startLine must be a positive integer.');
-  }
-
-  if (
-    arguments_.endLine !== undefined &&
-    (!Number.isInteger(arguments_.endLine) || (arguments_.endLine as number) < 1)
-  ) {
-    return invalid('endLine must be a positive integer.');
-  }
-
-  if (
-    typeof arguments_.startLine === 'number' &&
-    typeof arguments_.endLine === 'number' &&
-    arguments_.endLine < arguments_.startLine
-  ) {
-    return invalid('endLine must be greater than or equal to startLine.');
-  }
-
-  return {
-    path: arguments_.path,
-    startLine: arguments_.startLine as number | undefined,
-    endLine: arguments_.endLine as number | undefined,
-  };
-}
-
 export function createReadFileTool(projectRoot: string): Tool {
   return {
     name: 'read_file',
@@ -128,18 +85,29 @@ export function createReadFileTool(projectRoot: string): Tool {
       additionalProperties: false,
       required: ['path'],
       properties: {
-        path: { type: 'string', description: 'Project-relative file path.' },
+        path: {
+          type: 'string',
+          minLength: 1,
+          pattern: '\\S',
+          description: 'Project-relative file path.',
+        },
         startLine: { type: 'integer', minimum: 1 },
         endLine: { type: 'integer', minimum: 1 },
       },
     },
     async execute(
-      value: unknown,
+      value: Record<string, unknown>,
       signal: AbortSignal = new AbortController().signal,
     ): Promise<ToolExecutionResult> {
       signal.throwIfAborted();
-      const parsed = parseArguments(value);
-      if ('ok' in parsed) return parsed;
+      const parsed = value as unknown as ReadFileArguments;
+      if (
+        parsed.startLine !== undefined &&
+        parsed.endLine !== undefined &&
+        parsed.endLine < parsed.startLine
+      ) {
+        return invalid('endLine must be greater than or equal to startLine.');
+      }
 
       if (isSensitivePath(parsed.path)) {
         return {

@@ -1,4 +1,5 @@
-import { lstat, open, realpath, stat } from 'node:fs/promises';
+import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
+import type { Dir } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
@@ -11,6 +12,12 @@ export class PathPolicyError extends Error {}
 
 export interface OpenProjectFile {
   handle: FileHandle;
+  root: string;
+  target: string;
+}
+
+export interface OpenProjectDirectory {
+  directory: Dir;
   root: string;
   target: string;
 }
@@ -74,6 +81,41 @@ export async function openProjectFile(
     return { handle, root, target };
   } catch (error) {
     await handle.close();
+    throw error;
+  }
+}
+
+export async function openProjectDirectory(
+  projectRoot: string,
+  requestedPath: string,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<OpenProjectDirectory> {
+  const target = await resolveProjectPath(projectRoot, requestedPath);
+  const expectedDetails = await stat(target);
+  signal.throwIfAborted();
+  const directory = await opendir(target);
+
+  try {
+    const [root, revalidatedTarget] = await Promise.all([
+      realpath(projectRoot),
+      resolveProjectPath(projectRoot, requestedPath),
+    ]);
+    const currentDetails = await stat(revalidatedTarget);
+    signal.throwIfAborted();
+
+    const samePath = target === revalidatedTarget;
+    const sameDirectory =
+      expectedDetails.dev === currentDetails.dev &&
+      expectedDetails.ino === currentDetails.ino;
+    if (!samePath || !sameDirectory) {
+      throw new PathPolicyError(
+        'Requested directory changed while it was being opened.',
+      );
+    }
+
+    return { directory, root, target };
+  } catch (error) {
+    await directory.close();
     throw error;
   }
 }

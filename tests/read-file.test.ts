@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createReadFileTool } from '../src/tools/read-file.js';
+import { ToolRegistry } from '../src/tools/registry.js';
 
 const createdDirectories: string[] = [];
 
@@ -114,17 +115,20 @@ describe('read_file tool', () => {
 
   it.each([
     [{ path: '' }, 'path must be a non-empty string.'],
+    [{ path: '   ' }, 'path must be a non-empty string.'],
     [{ path: 'src/example.ts', startLine: 0 }, 'startLine must be a positive integer.'],
     [{ path: 'src/example.ts', endLine: 1.5 }, 'endLine must be a positive integer.'],
     [{ path: 'src/example.ts', extra: true }, 'Unknown argument: extra.'],
-  ])('rejects malformed arguments %#', async (arguments_, message) => {
+  ])('rejects malformed arguments %#', async (arguments_) => {
     const root = await createProject();
     await writeFile(join(root, 'src', 'example.ts'), 'first\nsecond');
-    const tool = createReadFileTool(root);
+    const registry = new ToolRegistry([createReadFileTool(root)]);
 
-    await expect(tool.execute(arguments_)).resolves.toEqual({
+    await expect(
+      registry.execute({ name: 'read_file', arguments: arguments_ }),
+    ).resolves.toMatchObject({
       ok: false,
-      error: { code: 'INVALID_ARGUMENTS', message },
+      error: { code: 'INVALID_ARGUMENTS' },
     });
   });
 

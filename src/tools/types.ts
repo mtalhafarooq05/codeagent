@@ -6,7 +6,10 @@ export interface Tool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
-  execute(arguments_: unknown, signal?: AbortSignal): Promise<ToolExecutionResult>;
+  execute(
+    arguments_: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolExecutionResult>;
 }
 
 export interface ToolCall {

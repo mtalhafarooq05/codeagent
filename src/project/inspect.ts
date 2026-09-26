@@ -1,18 +1,6 @@
 import { access, lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, extname, join, relative } from 'node:path';
-
-const SKIPPED_DIRECTORIES = new Set([
-  '.git',
-  '.next',
-  '.nuxt',
-  '.turbo',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'target',
-  'vendor',
-]);
+import { IGNORED_PROJECT_DIRECTORIES } from './ignored-directories.js';
 
 const MAX_DEPTH = 3;
 const MAX_ENTRIES = 120;
@@ -115,7 +103,12 @@ async function collectTree(root: string): Promise<{ tree: string[]; truncated: b
         truncated = true;
         return;
       }
-      if (entry.isDirectory() && SKIPPED_DIRECTORIES.has(entry.name)) continue;
+      if (
+        entry.isDirectory() &&
+        IGNORED_PROJECT_DIRECTORIES.has(entry.name.toLowerCase())
+      ) {
+        continue;
+      }
       if (entry.isSymbolicLink()) continue;
 
       const path = join(directory, entry.name);

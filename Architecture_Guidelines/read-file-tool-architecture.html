@@ -385,7 +385,7 @@
               <tr><td><code>cli.ts</code></td><td>Build and connect the application objects; own terminal input and Ctrl+C.</td><td>Config, project inspection, provider, registry, session.</td></tr>
               <tr><td><code>ChatSession</code></td><td>Own conversation state and coordinate bounded model/tool rounds.</td><td><code>ModelProvider</code>, <code>ToolRegistry</code>.</td></tr>
               <tr><td><code>OllamaProvider</code></td><td>Translate neutral messages and tools to/from Ollama's API.</td><td>Ollama client and provider/tool contracts.</td></tr>
-              <tr><td><code>ToolRegistry</code></td><td>Publish available tools and dispatch calls by exact name.</td><td>Generic <code>Tool</code> contract only.</td></tr>
+              <tr><td><code>ToolRegistry</code></td><td>Publish available tools, validate arguments with Ajv, and dispatch calls by exact name.</td><td>Generic <code>Tool</code> contract and Ajv.</td></tr>
               <tr><td><code>read_file</code></td><td>Apply read policy and transform a text file into a bounded structured result.</td><td>Tool contracts, path utility, Node file handle.</td></tr>
               <tr><td><code>utils/path.ts</code></td><td>Keep filesystem containment and safe-open concerns out of the tool.</td><td>Node path and filesystem APIs.</td></tr>
             </tbody>
@@ -543,7 +543,7 @@
         <h2>5. Tool execution pipeline</h2>
         <ol class="steps">
           <li><strong>Cancellation check.</strong> Stop immediately if the user already cancelled the request.</li>
-          <li><strong>Argument parsing.</strong> Require an object, allow only <code>path</code>, <code>startLine</code>, and <code>endLine</code>, and validate positive integer ranges.</li>
+          <li><strong>Shared schema validation.</strong> Before execution, the registry uses Ajv to require an object, allow only <code>path</code>, <code>startLine</code>, and <code>endLine</code>, and validate their primitive constraints.</li>
           <li><strong>Sensitive-name policy.</strong> Reject common secret and private-key names before opening anything.</li>
           <li><strong>Safe project open.</strong> Ask <code>openProjectFile</code> for one validated file handle tied to the selected project.</li>
           <li><strong>File-kind and size check.</strong> Require a regular file and reject a reported size above 1 MiB.</li>
@@ -566,16 +566,16 @@
           <table>
             <thead><tr><th>File / symbol</th><th>What it does</th><th>Why it exists</th></tr></thead>
             <tbody>
-              <tr><td><code>tools/index.ts<br>createProjectToolRegistry()</code></td><td>Creates the registry with the project-scoped <code>read_file</code> instance.</td><td>One composition point determines exactly which tools the model receives.</td></tr>
+              <tr><td><code>tools/index.ts<br>createProjectToolRegistry()</code></td><td>Creates the registry with project-scoped <code>read_file</code> and <code>list_directory</code> instances.</td><td>One composition point determines exactly which tools the model receives.</td></tr>
               <tr><td><code>tools/types.ts<br>Tool</code></td><td>Defines metadata and the asynchronous <code>execute(arguments, signal)</code> contract.</td><td>Any future tool can plug into the registry without changing the provider or session.</td></tr>
               <tr><td><code>ToolCall</code></td><td>Neutral call shape: tool name plus argument object.</td><td>Separates internal orchestration from Ollama's API format.</td></tr>
               <tr><td><code>ToolDescriptor</code></td><td>Safe model-visible subset of a tool.</td><td>The model needs a schema, not access to executable functions.</td></tr>
               <tr><td><code>ToolExecutionResult</code></td><td>Discriminated success/error result.</td><td>Makes expected failures serializable and understandable to the model.</td></tr>
-              <tr><td><code>ToolRegistry.constructor()</code></td><td>Indexes tools and rejects duplicate names.</td><td>Dispatch must be deterministic.</td></tr>
+              <tr><td><code>ToolRegistry.constructor()</code></td><td>Indexes tools, rejects duplicate names, and compiles each unique input schema with Ajv.</td><td>Dispatch and structural validation must be deterministic.</td></tr>
               <tr><td><code>ToolRegistry.descriptors()</code></td><td>Returns model-visible metadata for every registered tool.</td><td>Keeps discovery independent of execution.</td></tr>
-              <tr><td><code>ToolRegistry.execute()</code></td><td>Finds a tool by name, checks cancellation, executes it, and contains unexpected errors.</td><td>Central dispatch prevents the session from importing individual tools.</td></tr>
+              <tr><td><code>ToolRegistry.execute()</code></td><td>Finds a tool by name, validates arguments with its compiled Ajv validator, checks cancellation, executes it, and contains unexpected errors.</td><td>Central dispatch prevents the session from importing individual tools or repeating structural parsers.</td></tr>
               <tr><td><code>createReadFileTool()</code></td><td>Captures the project root and returns the concrete <code>Tool</code>.</td><td>Each tool instance is permanently scoped to one selected project.</td></tr>
-              <tr><td><code>parseArguments()</code></td><td>Runtime-validates the untrusted argument object.</td><td>TypeScript types do not validate model-generated JSON at runtime.</td></tr>
+              <tr><td><code>read_file.inputSchema</code></td><td>Declares required fields, allowed fields, and primitive constraints for Ajv and the model provider.</td><td>One schema now guides the model and enforces runtime structure, preventing validation drift.</td></tr>
               <tr><td><code>isSensitivePath()</code></td><td>Checks the requested basename against common secret-file patterns.</td><td>Reduces accidental credential disclosure.</td></tr>
               <tr><td><code>readBounded()</code></td><td>Reads from a <code>FileHandle</code> in 64 KiB chunks with cancellation and a hard byte ceiling.</td><td>Keeps resource policy separate from text shaping.</td></tr>
               <tr><td><code>hasTooManyControlCharacters()</code></td><td>Detects content that decodes as UTF-8 but behaves like binary/control data.</td><td>UTF-8 validity alone does not guarantee useful source text.</td></tr>
@@ -630,7 +630,7 @@
           <table>
             <thead><tr><th>Code / failure</th><th>Produced by</th><th>Meaning</th></tr></thead>
             <tbody>
-              <tr><td><span class="tag error">INVALID_ARGUMENTS</span></td><td><code>read_file</code></td><td>Wrong object shape, unknown field, invalid range, or path is not a regular file.</td></tr>
+              <tr><td><span class="tag error">INVALID_ARGUMENTS</span></td><td><code>ToolRegistry</code> / <code>read_file</code></td><td>Ajv rejects a wrong object shape, missing/unknown field, or primitive constraint; the tool rejects cross-field ranges or a non-file target.</td></tr>
               <tr><td><span class="tag error">SENSITIVE_FILE</span></td><td><code>read_file</code></td><td>Basename resembles an environment, registry credential, private key, or certificate key file.</td></tr>
               <tr><td><span class="tag error">FILE_NOT_FOUND</span></td><td><code>read_file</code></td><td>The requested project path does not exist.</td></tr>
               <tr><td><span class="tag error">PATH_NOT_ALLOWED</span></td><td><code>read_file</code> + path utility</td><td>The request is absolute, escapes the project, crosses a link, or changes during safe opening.</td></tr>
@@ -685,6 +685,7 @@
             <tbody>
               <tr><td>Path escape</td><td>Could expose files outside the chosen project.</td><td><span class="tag success">Mitigated</span></td><td>Containment, canonicalization, link rejection, and post-open identity revalidation.</td></tr>
               <tr><td>Check/read race</td><td>A path could change between validation and reading.</td><td><span class="tag success">Strongly mitigated</span></td><td>Open once, revalidate, then read only that handle. Absolute guarantees remain platform/filesystem-dependent.</td></tr>
+              <tr><td>Directory-open ABA race</td><td>A malicious same-user process could briefly replace a directory with an outside junction exactly while it is opened, then restore it before revalidation.</td><td><span class="tag">Partial</span></td><td><code>list_directory</code> enumerates one opened directory handle and performs before/after path and identity checks. Portable Node does not expose the opened <code>Dir</code> identity; eliminating a precisely timed double swap requires OS-level sandboxing or platform-specific APIs.</td></tr>
               <tr><td>Secret disclosure</td><td>Source trees sometimes contain tokens or private keys.</td><td><span class="tag">Partial</span></td><td>Common sensitive names are blocked, but arbitrary secrets inside ordinary source files cannot be reliably detected.</td></tr>
               <tr><td>Prompt injection in files</td><td>A file may tell the model to ignore policy or request more data.</td><td><span class="tag">Partial</span></td><td>Tool powers remain application-controlled and read-only. Content-level instruction separation should continue to be strengthened in prompts/providers.</td></tr>
               <tr><td>Resource exhaustion</td><td>A model could request too much data or loop.</td><td><span class="tag success">Mitigated</span></td><td>Byte, line, character, per-response, total-call, and round limits.</td></tr>
@@ -707,7 +708,7 @@
               <tr><td><code>tests/registry.test.ts</code></td><td>Discovery and dispatch</td><td>Descriptor exposure, execution by name, duplicate rejection, unknown tools, exception containment.</td></tr>
               <tr><td><code>tests/session-tool-loop.test.ts</code></td><td>Conversation orchestration</td><td>Result round-trip to model, per-response/total limits, cancellation between calls, suppression of unverified interim text.</td></tr>
               <tr><td><code>tests/ollama-provider.test.ts</code></td><td>Provider adapter</td><td>Ollama function schema, neutral event conversion, malformed call rejection.</td></tr>
-              <tr><td><code>tests/tools.test.ts</code></td><td>Composition</td><td>The default project registry exposes only <code>read_file</code>.</td></tr>
+              <tr><td><code>tests/tools.test.ts</code></td><td>Composition</td><td>The default project registry exposes <code>read_file</code> and <code>list_directory</code>.</td></tr>
             </tbody>
           </table>
         </div>

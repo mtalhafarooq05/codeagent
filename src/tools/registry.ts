@@ -1,3 +1,4 @@
+import { Ajv, type ValidateFunction } from 'ajv';
 import type {
   Tool,
   ToolCall,
@@ -6,15 +7,20 @@ import type {
 } from './types.js';
 
 export class ToolRegistry {
+  private readonly ajv: Ajv;
   private readonly tools: Map<string, Tool>;
+  private readonly validators: Map<string, ValidateFunction>;
 
   constructor(tools: readonly Tool[]) {
+    this.ajv = new Ajv({ allErrors: true });
     this.tools = new Map();
+    this.validators = new Map();
     for (const tool of tools) {
       if (this.tools.has(tool.name)) {
         throw new Error(`Duplicate tool name: ${tool.name}.`);
       }
       this.tools.set(tool.name, tool);
+      this.validators.set(tool.name, this.ajv.compile(tool.inputSchema));
     }
   }
 
@@ -37,6 +43,17 @@ export class ToolRegistry {
         error: {
           code: 'TOOL_NOT_FOUND',
           message: `Unknown tool: ${call.name}.`,
+        },
+      };
+    }
+
+    const validate = this.validators.get(call.name);
+    if (!validate || !validate(call.arguments)) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGUMENTS',
+          message: `Invalid tool arguments: ${this.ajv.errorsText(validate?.errors)}.`,
         },
       };
     }

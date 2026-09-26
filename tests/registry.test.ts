@@ -49,6 +49,36 @@ describe('ToolRegistry', () => {
     });
   });
 
+  it('rejects arguments that do not match the tool schema before execution', async () => {
+    let executions = 0;
+    const tool: Tool = {
+      name: 'string_path_tool',
+      description: 'Accepts a string path.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path'],
+        properties: { path: { type: 'string', minLength: 1 } },
+      },
+      async execute() {
+        executions += 1;
+        return { ok: true, value: null };
+      },
+    };
+    const registry = new ToolRegistry([tool]);
+
+    await expect(
+      registry.execute({ name: 'string_path_tool', arguments: { path: 42 } }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'INVALID_ARGUMENTS',
+        message: expect.stringContaining('must be string'),
+      },
+    });
+    expect(executions).toBe(0);
+  });
+
   it('rejects duplicate tool names', async () => {
     const root = await mkdtemp(join(tmpdir(), 'local-code-agent-registry-'));
     createdDirectories.push(root);
