@@ -1,0 +1,25 @@
+{
+  "name": "local-code-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-first TypeScript coding assistant powered by Ollama",
+  "scripts": {
+    "dev": "npm run build && node dist/cli.js",
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ollama": "^0.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
