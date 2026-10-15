@@ -1,6 +1,8 @@
 node_modules/
 dist/
-coverage/
-.env
-.env.*
-*.log
+build/
+*.tmp
+*.tmp.*
+.agents/
+.DS_Store
+Thumbs.db
